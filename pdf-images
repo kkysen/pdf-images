@@ -19,9 +19,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import os
 import re
+import shutil
 import sys
-from dataclasses import dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
@@ -126,6 +131,168 @@ def workspace_for(source: Source, outdir: Path) -> Path:
     return outdir / (source.slug or "document")
 
 
+@dataclass
+class ImageRecord:
+    """One unique image in the document, plus every page that references it."""
+
+    xref: int
+    # page number -> this image's position in that page's image list. The index
+    # must be per page: the same image can sit at a different position on each
+    # page it appears on, so a single stored index collides with another image's
+    # filename as soon as the two are laid out on a page they share.
+    placements: dict[int, int] = field(default_factory=dict)
+    width: int = 0
+    height: int = 0
+    colorspace: str = ""
+    bpc: int = 0
+    ext: str = ""
+    data: bytes = b""
+    sha256: str = ""
+    is_mask: bool = False
+    kept: bool = True
+    reason: str | None = None
+    path: str | None = None
+
+    @property
+    def area(self) -> int:
+        return self.width * self.height
+
+    @property
+    def pages(self) -> list[int]:
+        return list(self.placements)
+
+    @property
+    def first_page(self) -> int:
+        return next(iter(self.placements))
+
+    def stem(self, page: int, width: int) -> str:
+        return f"p{page:0{width}d}-i{self.placements[page] + 1:02d}"
+
+
+def scan(document: pymupdf.Document) -> list[ImageRecord]:
+    """Collect every unique image, keyed by `xref`, in first-appearance order.
+
+    A PDF stores each image once and references it from every page that uses it,
+    so keying on `xref` both deduplicates the extraction work and hands us the
+    cross-page reuse count that the `ubiquitous` heuristic needs. Reuse is always
+    counted over the whole document, never over a `--pages` selection, or
+    restricting to one page would make every image on it maximally ubiquitous.
+    """
+    records: dict[int, ImageRecord] = {}
+    masks: set[int] = set()
+
+    for number, page in enumerate(document, start=1):
+        for index, entry in enumerate(page.get_images(full=True)):
+            xref, smask = entry[0], entry[1]
+            if smask:
+                # Index 1 is the soft mask serving this image, not content itself.
+                masks.add(smask)
+            record = records.get(xref)
+            if record is None:
+                record = records[xref] = ImageRecord(xref=xref)
+            record.placements[number] = index
+
+    for xref, record in records.items():
+        record.is_mask = xref in masks
+        _load(document, record)
+
+    return list(records.values())
+
+
+def _load(document: pymupdf.Document, record: ImageRecord) -> None:
+    """Decode one image, recomposing with its soft mask when it has one."""
+    raw = document.extract_image(record.xref)
+    record.width = raw["width"]
+    record.height = raw["height"]
+    record.colorspace = raw.get("cs-name", "") or str(raw.get("colorspace", ""))
+    record.bpc = raw["bpc"]
+
+    if raw.get("smask"):
+        # Keeping the original bytes would silently drop transparency, so this is
+        # the one case where re-encoding (always as PNG) is worth the loss of fidelity.
+        pixmap = pymupdf.Pixmap(document, record.xref)
+        record.data = pixmap.tobytes("png")
+        record.ext = "png"
+    else:
+        record.data = raw["image"]
+        record.ext = raw["ext"]
+
+    record.sha256 = hashlib.sha256(record.data).hexdigest()
+
+
+def link_or_copy(source: Path, destination: Path) -> None:
+    """Hard-link `source` to `destination`, falling back to a copy.
+
+    An image reused across pages is written once and linked into the other page
+    directories, so browsing a single page still shows everything on it without
+    storing the bytes repeatedly.
+    """
+    try:
+        os.link(source, destination)
+    except OSError:
+        shutil.copyfile(source, destination)
+
+
+def write_images(records: list[ImageRecord], workspace: Path, page_count: int) -> None:
+    """Lay the extracted images out under `pages/`, with rejects in `rejected/`."""
+    pages_dir = workspace / "pages"
+    rejected_dir = workspace / "rejected"
+    # The tree is rebuilt every run: leaving files sorted under a previous run's
+    # thresholds beside files sorted under the current ones makes tuning useless.
+    for directory in (pages_dir, rejected_dir):
+        shutil.rmtree(directory, ignore_errors=True)
+
+    width = len(str(page_count))
+    for record in records:
+        if not record.kept:
+            rejected_dir.mkdir(parents=True, exist_ok=True)
+            target = rejected_dir / f"{record.stem(record.first_page, width)}.{record.ext}"
+            target.write_bytes(record.data)
+            record.path = str(target.relative_to(workspace))
+            continue
+
+        first: Path | None = None
+        for page in record.pages:
+            page_dir = pages_dir / f"p{page:0{width}d}"
+            page_dir.mkdir(parents=True, exist_ok=True)
+            target = page_dir / f"{record.stem(page, width)}.{record.ext}"
+            if first is None:
+                target.write_bytes(record.data)
+                first = target
+                record.path = str(target.relative_to(workspace))
+            else:
+                target.unlink(missing_ok=True)
+                link_or_copy(first, target)
+
+
+def build_manifest(source: Source, pdf_path: Path, document: pymupdf.Document, records: list[ImageRecord]) -> dict:
+    return {
+        "source": source.origin,
+        "source_is_url": source.is_url,
+        "pdf": str(pdf_path),
+        "extracted_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "page_count": document.page_count,
+        "images": [
+            {
+                "xref": record.xref,
+                "pages": record.pages,
+                "placements": record.placements,
+                "width": record.width,
+                "height": record.height,
+                "colorspace": record.colorspace,
+                "bpc": record.bpc,
+                "ext": record.ext,
+                "bytes": len(record.data),
+                "sha256": record.sha256,
+                "kept": record.kept,
+                "reason": record.reason,
+                "path": record.path,
+            }
+            for record in records
+        ],
+    }
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="pdf-images",
@@ -176,7 +343,13 @@ def run(args: argparse.Namespace) -> int:
                 pdf_path = resolved
 
     document = open_document(pdf_path)
-    print(f"{pdf_path}: {document.page_count} pages -> {workspace}")
+    records = scan(document)
+    write_images(records, workspace, document.page_count)
+    manifest = build_manifest(source, pdf_path, document, records)
+    (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+
+    placements = sum(len(record.pages) for record in records)
+    print(f"{pdf_path}: {document.page_count} pages, {len(records)} images ({placements} placements) -> {workspace}")
     return 0
 
 
