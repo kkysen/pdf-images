@@ -28,6 +28,26 @@ def png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
     return buffer.getvalue()
 
 
+def alpha_png(width: int, height: int) -> bytes:
+    """An image with a real alpha gradient, stored by the PDF as a soft mask.
+
+    Covers the one branch that re-encodes rather than passing bytes through.
+    A single-argument `pymupdf.Pixmap(document, xref)` silently returns this
+    without its alpha, so the extracted file's mode is what catches a regression.
+    """
+    image = Image.new("RGBA", (width, height))
+    image.putdata(
+        [
+            ((x // 16 * 37) % 256, (y // 16 * 53) % 256, 120, x * 255 // width)
+            for y in range(height)
+            for x in range(width)
+        ]
+    )
+    buffer = io.BytesIO()
+    image.save(buffer, "PNG")
+    return buffer.getvalue()
+
+
 def patterned_png(width: int, height: int, seed: int) -> bytes:
     """A non-uniform image, so it is not caught by the `solid` heuristic.
 
@@ -59,6 +79,7 @@ IMAGES = {
     "rule": (png(300, 2, (0, 0, 0)), range(1, PAGES + 1), "hairline"),
     "spacer": (png(16, 16, (255, 255, 255)), [1], "too-small"),
     "block": (png(200, 200, (255, 255, 255)), [3], "solid"),
+    "translucent": (alpha_png(300, 300), [4], "kept, and still RGBA"),
 }
 
 PLACEMENTS = {
@@ -68,6 +89,7 @@ PLACEMENTS = {
     "rule": pymupdf.Rect(50, 230, 350, 232),
     "spacer": pymupdf.Rect(400, 10, 416, 26),
     "block": pymupdf.Rect(50, 260, 250, 460),
+    "translucent": pymupdf.Rect(300, 260, 500, 460),
 }
 
 

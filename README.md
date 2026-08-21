@@ -13,7 +13,7 @@ What it does not do is any of the surrounding work:
 - it dumps a flat pile of `prefix-NNN.png` into whatever directory you happen to be in,
   with the page number available only as an opt-in filename prefix and no grouping,
 - and it makes no attempt to tell a real figure apart from
-  the logos, hairline rules, spacers, and alpha masks that get embedded alongside it.
+  the logos, hairline rules, and spacers that get embedded alongside it.
 
 `pdf-images` is that scaffolding.
 One argument in, a tidy per-page tree plus an auditable `manifest.json` out.
@@ -45,7 +45,7 @@ and finally a short hash of the URL.
 
 ```
 <outdir>/<slug>/
-  source.pdf
+  source.pdf          (fetched PDFs only)
   manifest.json
   pages/
     p001/p001-i01.png
@@ -56,11 +56,20 @@ and finally a short hash of the URL.
 ```
 
 `--outdir` defaults to the current directory.
+A local PDF is read where it sits and is not copied into the workspace,
+so `source.pdf` appears only for a fetched one.
 Page directories are zero padded to the width of the document's page count.
 
 Images keep their original encoding whenever the PDF stores one directly,
 so a JPEG in the PDF lands as a `.jpg` with its bytes untouched.
-Only images that must be recomposed with an alpha mask are re-encoded, as PNG.
+The single exception is an image with transparency:
+a PDF stores the alpha channel separately, as a soft mask,
+so those are composited back together and re-encoded as PNG.
+Passing the original bytes through would silently flatten them.
+
+There is deliberately no rule for rejecting masks.
+A soft mask lives inside its parent image rather than in the page's resources,
+so it never appears as a standalone image in the first place.
 
 ### Caching and reruns
 
@@ -90,7 +99,6 @@ so you can see what a threshold actually did and retune it.
 
 | Reason | Default rule | Flag |
 |---|---|---|
-| `mask` | the image is an `smask`/stencil serving another image, not standalone content | `--keep-masks` |
 | `too-small` | either dimension under 32 px | `--min-dim` |
 | `too-few-bytes` | decoded payload under 512 bytes, a backstop checked last | `--min-bytes` |
 | `hairline` | either side 3 px or less, or an aspect ratio worse than 50:1 | `--max-aspect` |
@@ -156,4 +164,5 @@ This is not a preference so much as an inheritance:
 and importing it makes this a derivative work.
 Building the same tool on poppler's `pdfimages` invoked as a subprocess would avoid that,
 since running a GPL binary at arm's length imposes nothing on the caller,
-but PyMuPDF's per-page `xref` access is what makes the dedup and mask detection here straightforward.
+but PyMuPDF's per-page `xref` access is what makes the deduplication
+and the soft-mask compositing here straightforward.
