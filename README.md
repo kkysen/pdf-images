@@ -92,10 +92,16 @@ so you can see what a threshold actually did and retune it.
 |---|---|---|
 | `mask` | the image is an `smask`/stencil serving another image, not standalone content | `--keep-masks` |
 | `too-small` | either dimension under 32 px | `--min-dim` |
-| `too-few-bytes` | decoded payload under 2048 bytes | `--min-bytes` |
+| `too-few-bytes` | decoded payload under 512 bytes, a backstop checked last | `--min-bytes` |
 | `hairline` | either side 3 px or less, or an aspect ratio worse than 50:1 | `--max-aspect` |
 | `solid` | near-uniform color | `--keep-solid` |
 | `ubiquitous` | small *and* reused across many pages: the logo/watermark signal | `--max-pages`, `--ubiquitous-area` |
+
+The order matters, and the payload floor runs *last*.
+PNG compresses a solid 200x200 block to a few hundred bytes
+and a real logo to under 2 KB,
+so checking size first would swallow both `solid` and `ubiquitous`
+and report the least informative of the three reasons.
 
 `--no-filter` turns all of them off.
 Individual checks can be disabled by setting their threshold to `0`.
@@ -104,8 +110,9 @@ Individual checks can be disabled by setting their threshold to `0`.
 
 Reuse count alone cannot separate a logo from a figure.
 A document may legitimately repeat one large figure on every page,
-and a small logo clears every other check here:
-a 60x60 logo beats the 32 px minimum dimension and a 10 KB payload beats the 2048 byte floor.
+and a small logo clears every other check here,
+since a 60x60 logo beats the 32 px minimum dimension
+and compresses to well above the payload floor.
 Size is the only signal that actually discriminates the two,
 so `ubiquitous` fires only when an image is *both* small (under 256x256 by default)
 *and* present on at least half the pages.
@@ -123,7 +130,8 @@ Reassembling those is not attempted.
 
 ## `manifest.json`
 
-Per image: `xref`, the list of `pages` it appears on, `index`, `width`, `height`,
+Per image: `xref`, the list of `pages` it appears on,
+`placements` mapping each page to the image's position on it, `width`, `height`,
 `colorspace`, `bpc`, `ext`, `bytes`, `sha256`, `kept`, `reason`, and the output path.
 Plus a top-level block with the source, fetch timestamp, page count,
 and every resolved threshold, so a run is reproducible and its filtering is auditable.

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -32,6 +33,7 @@ from urllib.parse import unquote, urlparse
 
 import httpx
 import pymupdf
+from PIL import Image
 
 PDF_MAGIC = b"%PDF-"
 PDF_CONTENT_TYPES = frozenset({"application/pdf", "application/x-pdf", "application/octet-stream"})
@@ -265,13 +267,110 @@ def write_images(records: list[ImageRecord], workspace: Path, page_count: int) -
                 link_or_copy(first, target)
 
 
-def build_manifest(source: Source, pdf_path: Path, document: pymupdf.Document, records: list[ImageRecord]) -> dict:
+@dataclass(frozen=True)
+class Thresholds:
+    """The junk heuristics, as data, so a run's filtering is reproducible.
+
+    Every threshold is disabled by setting it to 0, and `--no-filter` zeroes
+    them all. Rejected images are quarantined under `rejected/`, never deleted:
+    a heuristic that guesses wrong should cost a second look, not the image.
+    """
+
+    min_dim: int = 32
+    min_bytes: int = 512
+    max_aspect: float = 50.0
+    hairline_dim: int = 3
+    ubiquitous_area: int = 256 * 256
+    max_pages: int = 0  # 0 means "derive from the page count"
+    keep_masks: bool = False
+    keep_solid: bool = False
+    solid_spread: int = 8
+
+    def reuse_limit(self, page_count: int) -> int:
+        """How many pages an image may appear on before it looks like furniture."""
+        return self.max_pages or max(3, -(-page_count // 2))
+
+    def as_dict(self, page_count: int) -> dict:
+        return {"reuse_limit": self.reuse_limit(page_count)} | {
+            name: getattr(self, name) for name in self.__dataclass_fields__
+        }
+
+
+def is_near_solid(record: ImageRecord, spread: int) -> bool:
+    """True when every channel varies by less than `spread` across the image.
+
+    A flat rectangle is background or a spacer, never content worth keeping.
+    """
+    try:
+        with Image.open(io.BytesIO(record.data)) as image:
+            extrema = image.convert("RGB").getextrema()
+    except Exception:
+        # An image Pillow cannot decode is not evidence of anything; keep it.
+        return False
+    return all(high - low < spread for low, high in extrema)
+
+
+def classify(record: ImageRecord, thresholds: Thresholds, page_count: int) -> str | None:
+    """The reason this image is junk, or None to keep it.
+
+    Ordered cheapest and most decisive first, so the recorded reason is the most
+    informative one rather than whichever check happened to run.
+    """
+    if record.is_mask and not thresholds.keep_masks:
+        return "mask"
+
+    smallest = min(record.width, record.height)
+    largest = max(record.width, record.height)
+    if thresholds.hairline_dim and smallest <= thresholds.hairline_dim:
+        return "hairline"
+    if thresholds.max_aspect and smallest and largest / smallest > thresholds.max_aspect:
+        return "hairline"
+    if thresholds.min_dim and smallest < thresholds.min_dim:
+        return "too-small"
+
+    # Size is the only signal separating a repeated logo from a repeated figure:
+    # a document may legitimately carry one large figure on every page, and a
+    # small logo clears every other check above. Hence both conditions.
+    if (
+        thresholds.ubiquitous_area
+        and record.area < thresholds.ubiquitous_area
+        and len(record.placements) >= thresholds.reuse_limit(page_count)
+    ):
+        return "ubiquitous"
+
+    if not thresholds.keep_solid and is_near_solid(record, thresholds.solid_spread):
+        return "solid"
+
+    # Last, and deliberately low. A payload floor is only a backstop for data too
+    # degenerate for the checks above to describe: run it any earlier and it
+    # swallows them, since PNG compresses a solid 200x200 block to a few hundred
+    # bytes and a real logo to under 2 KB, both of which have better reasons.
+    if thresholds.min_bytes and len(record.data) < thresholds.min_bytes:
+        return "too-few-bytes"
+
+    return None
+
+
+def apply_filters(records: list[ImageRecord], thresholds: Thresholds, page_count: int) -> None:
+    for record in records:
+        record.reason = classify(record, thresholds, page_count)
+        record.kept = record.reason is None
+
+
+def build_manifest(
+    source: Source,
+    pdf_path: Path,
+    document: pymupdf.Document,
+    records: list[ImageRecord],
+    thresholds: Thresholds,
+) -> dict:
     return {
         "source": source.origin,
         "source_is_url": source.is_url,
         "pdf": str(pdf_path),
         "extracted_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "page_count": document.page_count,
+        "thresholds": thresholds.as_dict(document.page_count),
         "images": [
             {
                 "xref": record.xref,
@@ -315,7 +414,61 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="accept a download that does not look like a PDF",
     )
+
+    junk = parser.add_argument_group(
+        "junk filtering",
+        "Rejects are quarantined under rejected/, never deleted."
+        " Set any threshold to 0 to disable that check.",
+    )
+    defaults = Thresholds()
+    junk.add_argument("--no-filter", action="store_true", help="keep every image")
+    junk.add_argument(
+        "--min-dim", type=int, default=defaults.min_dim, help="reject images shorter than this on either side"
+    )
+    junk.add_argument(
+        "--min-bytes", type=int, default=defaults.min_bytes, help="reject images whose payload is smaller than this"
+    )
+    junk.add_argument(
+        "--max-aspect", type=float, default=defaults.max_aspect, help="reject images more elongated than this ratio"
+    )
+    junk.add_argument(
+        "--ubiquitous-area",
+        type=int,
+        default=defaults.ubiquitous_area,
+        help="an image smaller than this many pixels can be rejected as a repeated logo",
+    )
+    junk.add_argument(
+        "--max-pages",
+        type=int,
+        default=defaults.max_pages,
+        help="how many pages a small image may appear on before it counts as a logo"
+        " (default: half the document, minimum 3)",
+    )
+    junk.add_argument("--keep-masks", action="store_true", help="keep soft masks serving other images")
+    junk.add_argument("--keep-solid", action="store_true", help="keep near-uniform images")
     return parser.parse_args(argv)
+
+
+def thresholds_from(args: argparse.Namespace) -> Thresholds:
+    if args.no_filter:
+        return Thresholds(
+            min_dim=0,
+            min_bytes=0,
+            max_aspect=0,
+            hairline_dim=0,
+            ubiquitous_area=0,
+            keep_masks=True,
+            keep_solid=True,
+        )
+    return Thresholds(
+        min_dim=args.min_dim,
+        min_bytes=args.min_bytes,
+        max_aspect=args.max_aspect,
+        ubiquitous_area=args.ubiquitous_area,
+        max_pages=args.max_pages,
+        keep_masks=args.keep_masks,
+        keep_solid=args.keep_solid,
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -343,13 +496,18 @@ def run(args: argparse.Namespace) -> int:
                 pdf_path = resolved
 
     document = open_document(pdf_path)
+    thresholds = thresholds_from(args)
     records = scan(document)
+    apply_filters(records, thresholds, document.page_count)
     write_images(records, workspace, document.page_count)
-    manifest = build_manifest(source, pdf_path, document, records)
+    manifest = build_manifest(source, pdf_path, document, records, thresholds)
     (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
-    placements = sum(len(record.pages) for record in records)
-    print(f"{pdf_path}: {document.page_count} pages, {len(records)} images ({placements} placements) -> {workspace}")
+    kept = sum(1 for record in records if record.kept)
+    print(
+        f"{pdf_path}: {document.page_count} pages,"
+        f" {kept} of {len(records)} images kept -> {workspace}"
+    )
     return 0
 
 
