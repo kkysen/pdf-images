@@ -453,7 +453,7 @@ def print_table(manifest: dict) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="pdf-images",
+        prog="pdf_images.py",
         description="Fetch a PDF, extract its images, and organize them by page.",
     )
     parser.add_argument("target", help="a URL to fetch, or a path to a local PDF")
@@ -588,7 +588,7 @@ def main() -> int:
     try:
         return run(parse_args())
     except Failure as error:
-        print(f"pdf-images: {error}", file=sys.stderr)
+        print(f"pdf_images.py: {error}", file=sys.stderr)
         return 1
 
 

@@ -1,4 +1,4 @@
-# `pdf-images`
+# `pdf_images.py`
 
 Fetch a PDF, extract its embedded images, organize them by page,
 and quarantine the junk that PDFs routinely carry around.
@@ -15,15 +15,15 @@ What it does not do is any of the surrounding work:
 - and it makes no attempt to tell a real figure apart from
   the logos, hairline rules, and spacers that get embedded alongside it.
 
-`pdf-images` is that scaffolding.
+`pdf_images.py` is that scaffolding.
 One argument in, a tidy per-page tree plus an auditable `manifest.json` out.
 
 ## Usage
 
 ```console
-$ pdf-images https://example.org/paper.pdf
-$ pdf-images ./local.pdf --dry-run
-$ pdf-images ./local.pdf --no-filter --outdir ~/scratch
+$ ./pdf_images.py https://example.org/paper.pdf
+$ ./pdf_images.py ./local.pdf --dry-run
+$ ./pdf_images.py ./local.pdf --no-filter --outdir ~/scratch
 ```
 
 The script is a single self-contained file with a PEP-723 inline header,
@@ -83,7 +83,7 @@ beside files sorted under the new ones, which is exactly what makes threshold tu
 ## Deduplication
 
 A PDF stores each image once and references it from every page that uses it.
-`pdf-images` keys off that reference (the `xref`), so a header logo repeated on 200 pages
+`pdf_images.py` keys off that reference (the `xref`), so a header logo repeated on 200 pages
 is decoded once, not 200 times.
 
 The file is written under the first page that uses it and hard-linked into the others,
@@ -160,7 +160,7 @@ The exit status is nonzero on a fetch failure, a PDF that will not open, or a do
 AGPL-3.0-or-later, see `LICENSE`.
 
 This is not a preference so much as an inheritance:
-`pdf-images` imports PyMuPDF, which is dual licensed AGPL-3.0 or Artifex commercial,
+`pdf_images.py` imports PyMuPDF, which is dual licensed AGPL-3.0 or Artifex commercial,
 and importing it makes this a derivative work.
 Building the same tool on poppler's `pdfimages` invoked as a subprocess would avoid that,
 since running a GPL binary at arm's length imposes nothing on the caller,
