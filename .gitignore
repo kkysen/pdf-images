@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# Extraction workspaces: each is <slug>/ containing source.pdf, pages/, rejected/, manifest.json.
+# Regenerable from the source URL, and image-heavy, so never committed.
+/out/
