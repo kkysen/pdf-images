@@ -25,7 +25,6 @@ import os
 import re
 import shutil
 import sys
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -235,7 +234,12 @@ def link_or_copy(source: Path, destination: Path) -> None:
         shutil.copyfile(source, destination)
 
 
-def write_images(records: list[ImageRecord], workspace: Path, page_count: int) -> None:
+def write_images(
+    records: list[ImageRecord],
+    workspace: Path,
+    page_count: int,
+    selection: set[int] | None = None,
+) -> None:
     """Lay the extracted images out under `pages/`, with rejects in `rejected/`."""
     pages_dir = workspace / "pages"
     rejected_dir = workspace / "rejected"
@@ -247,6 +251,8 @@ def write_images(records: list[ImageRecord], workspace: Path, page_count: int) -
     width = len(str(page_count))
     for record in records:
         if not record.kept:
+            if selection is not None and not selection.intersection(record.placements):
+                continue
             rejected_dir.mkdir(parents=True, exist_ok=True)
             target = rejected_dir / f"{record.stem(record.first_page, width)}.{record.ext}"
             target.write_bytes(record.data)
@@ -254,7 +260,11 @@ def write_images(records: list[ImageRecord], workspace: Path, page_count: int) -
             continue
 
         first: Path | None = None
+        # `--pages` restricts only what is written. Reuse counts, and therefore
+        # the filtering verdicts, were already computed over the whole document.
         for page in record.pages:
+            if selection is not None and page not in selection:
+                continue
             page_dir = pages_dir / f"p{page:0{width}d}"
             page_dir.mkdir(parents=True, exist_ok=True)
             target = page_dir / f"{record.stem(page, width)}.{record.ext}"
@@ -392,6 +402,51 @@ def build_manifest(
     }
 
 
+def parse_page_selection(spec: str, page_count: int) -> set[int]:
+    """Parse `3-7,12` into a set of page numbers, validated against the document."""
+    selected: set[int] = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            if "-" in part.lstrip("-"):
+                start, _, end = part.partition("-")
+                selected.update(range(int(start), int(end) + 1))
+            else:
+                selected.add(int(part))
+        except ValueError:
+            raise Failure(f"cannot parse page selection {part!r}") from None
+
+    out_of_range = sorted(n for n in selected if not 1 <= n <= page_count)
+    if out_of_range:
+        raise Failure(f"pages {out_of_range} are outside this {page_count} page document")
+    if not selected:
+        raise Failure(f"page selection {spec!r} selects nothing")
+    return selected
+
+
+def print_table(manifest: dict) -> None:
+    """The `--dry-run` view: one row per image, with the verdict spelled out."""
+    rows = [("PAGES", "SIZE", "BYTES", "EXT", "VERDICT")]
+    rows += [
+        (
+            ",".join(str(page) for page in image["pages"]),
+            f"{image['width']}x{image['height']}",
+            str(image["bytes"]),
+            image["ext"],
+            "keep" if image["kept"] else image["reason"],
+        )
+        for image in manifest["images"]
+    ]
+    widths = [max(len(row[column]) for row in rows) for column in range(len(rows[0]))]
+    for row in rows:
+        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths, strict=True)).rstrip())
+
+    kept = sum(1 for image in manifest["images"] if image["kept"])
+    print(f"\n{kept} of {len(manifest['images'])} images kept over {manifest['page_count']} pages")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="pdf-images",
@@ -446,6 +501,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     junk.add_argument("--keep-masks", action="store_true", help="keep soft masks serving other images")
     junk.add_argument("--keep-solid", action="store_true", help="keep near-uniform images")
+
+    output = parser.add_argument_group("output")
+    output.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="write nothing; print what would be extracted. The threshold tuning loop.",
+    )
+    output.add_argument("--pages", help="restrict which pages are written, e.g. 3-7,12")
+    output.add_argument("--json", action="store_true", help="print the manifest instead of a table")
     return parser.parse_args(argv)
 
 
@@ -480,7 +544,8 @@ def run(args: argparse.Namespace) -> int:
             raise Failure(f"no such file: {local}")
         pdf_path = local
         workspace = workspace_for(source, args.outdir)
-        workspace.mkdir(parents=True, exist_ok=True)
+        if not args.dry_run:
+            workspace.mkdir(parents=True, exist_ok=True)
     else:
         workspace = workspace_for(source, args.outdir)
         pdf_path = workspace / "source.pdf"
@@ -497,17 +562,24 @@ def run(args: argparse.Namespace) -> int:
 
     document = open_document(pdf_path)
     thresholds = thresholds_from(args)
+    selection = parse_page_selection(args.pages, document.page_count) if args.pages else None
+
     records = scan(document)
     apply_filters(records, thresholds, document.page_count)
-    write_images(records, workspace, document.page_count)
+    if not args.dry_run:
+        write_images(records, workspace, document.page_count, selection)
     manifest = build_manifest(source, pdf_path, document, records, thresholds)
-    (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
-    kept = sum(1 for record in records if record.kept)
-    print(
-        f"{pdf_path}: {document.page_count} pages,"
-        f" {kept} of {len(records)} images kept -> {workspace}"
-    )
+    if args.json:
+        print(json.dumps(manifest, indent=2))
+    elif args.dry_run:
+        print_table(manifest)
+    else:
+        kept = sum(1 for record in records if record.kept)
+        print(f"{pdf_path}: {document.page_count} pages, {kept} of {len(records)} images kept -> {workspace}")
+
+    if not args.dry_run:
+        (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return 0
 
 

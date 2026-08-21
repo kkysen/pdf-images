@@ -138,7 +138,10 @@ and every resolved threshold, so a run is reproducible and its filtering is audi
 
 ## Other flags
 
-- `--dry-run` writes nothing and prints the manifest as a table. This is the threshold tuning loop.
+- `--dry-run` prints the manifest as a table and writes no images or `manifest.json`.
+  This is the threshold tuning loop.
+  A URL still has to be downloaded to be read, so a first `--dry-run` does cache `source.pdf`;
+  subsequent runs reuse it.
 - `--pages 3-7,12` restricts which pages get written.
 - `--json` prints the manifest to stdout instead of the human-readable table.
 
