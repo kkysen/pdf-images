@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: ruff format
+        run: uv run ruff format --check
+
+      - name: ruff check
+        run: uv run ruff check
+
+      - name: ty
+        run: uv run ty check
+
+      - name: pyrefly
+        run: uv run pyrefly check
+
+      # The network-marked end-to-end test is deselected by default (see `pyproject.toml`),
+      # so CI never depends on arxiv.org being up.
+      - name: pytest
+        run: uv run pytest
