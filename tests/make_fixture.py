@@ -1,8 +1,4 @@
-#!/usr/bin/env -S uv run --script
-# /// script
-# requires-python = ">=3.14"
-# dependencies = ["pymupdf", "pillow"]
-# ///
+#!/usr/bin/env -S uv run python
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 """Generate `tests/fixture.pdf`, a PDF shaped to exercise every junk heuristic.

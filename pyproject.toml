@@ -1,0 +1,55 @@
+[project]
+name = "pdf-images"
+version = "0.1.0"
+description = "Fetch a PDF, extract its images, organize them by page, and quarantine the junk."
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.14"
+dependencies = [
+    "httpx>=0.28.1",
+    "pillow>=11.4.0",
+    "pymupdf>=1.28.2",
+]
+
+[project.scripts]
+pdf-images = "pdf_images.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pyrefly>=1.2.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+    "ty>=0.0.70",
+]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pyrefly]
+preset = "strict"
+# `conftest` is imported by name from the test modules, the way pytest resolves it.
+search-path = ["tests"]
+
+[tool.ty.rules]
+blanket-ignore-comment = "warn"
+division-by-zero = "warn"
+missing-override-decorator = "warn"
+missing-type-argument = "warn"
+possibly-missing-attribute = "warn"
+possibly-missing-import = "warn"
+possibly-unresolved-reference = "warn"
+unsupported-dynamic-base = "warn"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The end-to-end test hits arxiv.org, so it is opt-in: `uv run pytest -m network`.
+markers = ["network: needs internet access"]
+addopts = "-m 'not network'"

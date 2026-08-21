@@ -1,4 +1,4 @@
-# `pdf_images.py`
+# `pdf-images`
 
 Fetch a PDF, extract its embedded images, organize them by page,
 and quarantine the junk that PDFs routinely carry around.
@@ -15,20 +15,54 @@ What it does not do is any of the surrounding work:
 - and it makes no attempt to tell a real figure apart from
   the logos, hairline rules, and spacers that get embedded alongside it.
 
-`pdf_images.py` is that scaffolding.
+`pdf-images` is that scaffolding.
 One argument in, a tidy per-page tree plus an auditable `manifest.json` out.
 
 ## Usage
 
 ```console
-$ ./pdf_images.py https://example.org/paper.pdf
-$ ./pdf_images.py ./local.pdf --dry-run
-$ ./pdf_images.py ./local.pdf --no-filter --outdir ~/scratch
+$ uv run pdf-images https://example.org/paper.pdf
+$ uv run pdf-images ./local.pdf --dry-run
+$ uv run pdf-images ./local.pdf --no-filter --outdir ~/scratch
 ```
 
-The script is a single self-contained file with a PEP-723 inline header,
-so `uv` resolves `pymupdf`, `pillow`, and `httpx` on first run.
-There is no virtualenv to create or activate: mark it executable and run it.
+`uv` resolves the dependencies and installs the `pdf-images` entry point on first run,
+so there is no virtualenv to create or activate by hand.
+
+## Development
+
+```console
+$ uv run ruff format          # and `ruff format --check` in CI
+$ uv run ruff check
+$ uv run ty check
+$ uv run pyrefly check
+$ uv run pytest
+```
+
+`.github/workflows/ci.yml` runs exactly those five.
+`.pre-commit-config.yaml` runs the same set on commit;
+`uv run pre-commit install` wires it up.
+
+The end-to-end test fetches a paper from arXiv, so it is marked `network`
+and deselected by default.
+Run it with `uv run pytest -m network`.
+
+Tests read the committed `tests/fixture.pdf`, a six page document
+carrying one image per heuristic, and never regenerate it:
+`tests/make_fixture.py` embeds a creation timestamp,
+so a regenerated PDF differs byte for byte from the tracked one.
+
+### Layout
+
+```
+src/pdf_images/
+  records.py    the shared error type and per-image record, importing nothing else
+  fetch.py      URL or path -> a local PDF and a workspace
+  extract.py    decoding each unique image once, and the per-page layout
+  filters.py    the junk heuristics and their thresholds
+  manifest.py   the run record, and the --dry-run table
+  cli.py        argument parsing and the top-level run
+```
 
 ### Input
 
@@ -83,7 +117,7 @@ beside files sorted under the new ones, which is exactly what makes threshold tu
 ## Deduplication
 
 A PDF stores each image once and references it from every page that uses it.
-`pdf_images.py` keys off that reference (the `xref`), so a header logo repeated on 200 pages
+`pdf-images` keys off that reference (the `xref`), so a header logo repeated on 200 pages
 is decoded once, not 200 times.
 
 The file is written under the first page that uses it and hard-linked into the others,
@@ -160,7 +194,7 @@ The exit status is nonzero on a fetch failure, a PDF that will not open, or a do
 AGPL-3.0-or-later, see `LICENSE`.
 
 This is not a preference so much as an inheritance:
-`pdf_images.py` imports PyMuPDF, which is dual licensed AGPL-3.0 or Artifex commercial,
+`pdf-images` imports PyMuPDF, which is dual licensed AGPL-3.0 or Artifex commercial,
 and importing it makes this a derivative work.
 Building the same tool on poppler's `pdfimages` invoked as a subprocess would avoid that,
 since running a GPL binary at arm's length imposes nothing on the caller,
