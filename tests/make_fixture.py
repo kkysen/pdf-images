@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pymupdf
 from PIL import Image
+from pymupdf import Rect
 
 PAGES = 6
 
@@ -78,13 +79,13 @@ IMAGES = {
 }
 
 PLACEMENTS = {
-    "figure-every": pymupdf.Rect(50, 60, 250, 210),
-    "figure-sparse": pymupdf.Rect(300, 60, 500, 210),
-    "logo": pymupdf.Rect(10, 10, 40, 40),
-    "rule": pymupdf.Rect(50, 230, 350, 232),
-    "spacer": pymupdf.Rect(400, 10, 416, 26),
-    "block": pymupdf.Rect(50, 260, 250, 460),
-    "translucent": pymupdf.Rect(300, 260, 500, 460),
+    "figure-every": Rect(50, 60, 250, 210),
+    "figure-sparse": Rect(300, 60, 500, 210),
+    "logo": Rect(10, 10, 40, 40),
+    "rule": Rect(50, 230, 350, 232),
+    "spacer": Rect(400, 10, 416, 26),
+    "block": Rect(50, 260, 250, 460),
+    "translucent": Rect(300, 260, 500, 460),
 }
 
 

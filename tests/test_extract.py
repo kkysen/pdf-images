@@ -8,6 +8,7 @@ import pymupdf
 import pytest
 from conftest import Extract, ManifestOf
 from PIL import Image
+from pymupdf import Pixmap
 
 
 def test_every_placement_gets_its_own_file(extract: Extract, manifest_of: ManifestOf) -> None:
@@ -43,7 +44,7 @@ def test_reused_images_share_one_inode(extract: Extract, manifest_of: ManifestOf
 def test_transparency_survives_extraction(extract: Extract, manifest_of: ManifestOf) -> None:
     """A PDF stores alpha as a separate soft mask, which must be composited back.
 
-    The single-argument `pymupdf.Pixmap(document, xref)` returns the base image
+    The single-argument `Pixmap(document, xref)` returns the base image
     with no alpha at all, so this asserts on the mode of the extracted file
     rather than merely on the extraction succeeding.
     """
@@ -88,14 +89,14 @@ def test_a_base_with_alpha_cannot_be_composited_directly(fixture_pdf: Path) -> N
     translucent = next(
         entry for page in range(document.page_count) for entry in document[page].get_images(full=True) if entry[1]
     )
-    base = pymupdf.Pixmap(document, translucent[0])
-    mask = pymupdf.Pixmap(document, translucent[1])
+    base = Pixmap(document, translucent[0])
+    mask = Pixmap(document, translucent[1])
 
-    with_alpha = pymupdf.Pixmap(base, 1)
+    with_alpha = Pixmap(base, 1)
     assert with_alpha.alpha, "the setup itself must produce the shape being guarded against"
     with pytest.raises(Exception, match="must not have an alpha channel"):
-        pymupdf.Pixmap(with_alpha, mask)
+        Pixmap(with_alpha, mask)
 
-    stripped = pymupdf.Pixmap(with_alpha, 0)
+    stripped = Pixmap(with_alpha, 0)
     assert not stripped.alpha
-    assert pymupdf.Pixmap(stripped, mask).alpha, "stripping first is what makes compositing work"
+    assert Pixmap(stripped, mask).alpha, "stripping first is what makes compositing work"

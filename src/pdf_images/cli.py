@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-import typer
+from typer import Argument, Exit, Option, Typer
 
 from pdf_images.extract import scan, write_images
 from pdf_images.fetch import fetch, open_document, resolve_source, workspace_for
@@ -101,7 +101,7 @@ def run(
     return 0
 
 
-app = typer.Typer(
+app = Typer(
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
     help="Fetch a PDF, extract its images, and organize them by page.",
@@ -117,55 +117,51 @@ OUTPUT = "output"
 def extract(
     pdf: Annotated[
         str,
-        typer.Argument(metavar="PDF", help="the PDF to extract from, either a URL to fetch or a path to a local file"),
+        Argument(metavar="PDF", help="the PDF to extract from, either a URL to fetch or a path to a local file"),
     ],
     outdir: Annotated[
-        Path, typer.Option(help="where the workspace directory is created", show_default="the current directory")
+        Path, Option(help="where the workspace directory is created", show_default="the current directory")
     ] = Path("."),
     refetch: Annotated[
-        bool, typer.Option("--refetch", help="re-download even when the workspace already holds a source.pdf")
+        bool, Option("--refetch", help="re-download even when the workspace already holds a source.pdf")
     ] = False,
-    force: Annotated[bool, typer.Option("--force", help="accept a download that does not look like a PDF")] = False,
-    no_filter: Annotated[bool, typer.Option("--no-filter", help="keep every image", rich_help_panel=JUNK)] = False,
+    force: Annotated[bool, Option("--force", help="accept a download that does not look like a PDF")] = False,
+    no_filter: Annotated[bool, Option("--no-filter", help="keep every image", rich_help_panel=JUNK)] = False,
     min_dim: Annotated[
-        int, typer.Option(help="reject images shorter than this on either side", rich_help_panel=JUNK)
+        int, Option(help="reject images shorter than this on either side", rich_help_panel=JUNK)
     ] = _DEFAULTS.min_dim,
     min_bytes: Annotated[
-        int, typer.Option(help="reject images whose payload is smaller than this", rich_help_panel=JUNK)
+        int, Option(help="reject images whose payload is smaller than this", rich_help_panel=JUNK)
     ] = _DEFAULTS.min_bytes,
     max_aspect: Annotated[
-        float, typer.Option(help="reject images more elongated than this ratio", rich_help_panel=JUNK)
+        float, Option(help="reject images more elongated than this ratio", rich_help_panel=JUNK)
     ] = _DEFAULTS.max_aspect,
     ubiquitous_area: Annotated[
         int,
-        typer.Option(
-            help="an image smaller than this many pixels can be rejected as a repeated logo", rich_help_panel=JUNK
-        ),
+        Option(help="an image smaller than this many pixels can be rejected as a repeated logo", rich_help_panel=JUNK),
     ] = _DEFAULTS.ubiquitous_area,
     max_pages: Annotated[
         int,
-        typer.Option(
+        Option(
             help="how many pages a small image may appear on before it counts as a logo",
             show_default="half the document, minimum 3",
             rich_help_panel=JUNK,
         ),
     ] = _DEFAULTS.max_pages,
-    keep_solid: Annotated[
-        bool, typer.Option("--keep-solid", help="keep near-uniform images", rich_help_panel=JUNK)
-    ] = False,
+    keep_solid: Annotated[bool, Option("--keep-solid", help="keep near-uniform images", rich_help_panel=JUNK)] = False,
     dry_run: Annotated[
         bool,
-        typer.Option(
+        Option(
             "--dry-run",
             help="write nothing; print what would be extracted. The threshold tuning loop.",
             rich_help_panel=OUTPUT,
         ),
     ] = False,
     pages: Annotated[
-        str | None, typer.Option(help="restrict which pages are written, e.g. 3-7,12", rich_help_panel=OUTPUT)
+        str | None, Option(help="restrict which pages are written, e.g. 3-7,12", rich_help_panel=OUTPUT)
     ] = None,
     as_json: Annotated[
-        bool, typer.Option("--json", help="print the manifest instead of a table", rich_help_panel=OUTPUT)
+        bool, Option("--json", help="print the manifest instead of a table", rich_help_panel=OUTPUT)
     ] = False,
 ) -> None:
     """Fetch a PDF, extract its images, and organize them by page.
@@ -199,7 +195,7 @@ def extract(
     except Failure as error:
         # An expected failure is a message and a nonzero exit, never a traceback.
         print(f"pdf-images: {error}", file=sys.stderr)
-        raise typer.Exit(1) from error
+        raise Exit(1) from error
 
 
 if __name__ == "__main__":

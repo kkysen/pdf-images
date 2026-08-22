@@ -2,15 +2,17 @@
 
 """Turning a URL or a path into a local PDF and a workspace to put it beside."""
 
-import hashlib
 import re
 import sys
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 import httpx
 import pymupdf
+from httpx import HTTPError
+from pymupdf import Document
 
 from pdf_images.records import Failure
 
@@ -65,7 +67,7 @@ def fetch(source: Source, destination: Path, *, force: bool) -> Source:
         try:
             response = client.get(source.origin)
             response.raise_for_status()
-        except httpx.HTTPError as error:
+        except HTTPError as error:
             raise Failure(f"fetching {source.origin}: {error}") from error
 
     content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
@@ -84,14 +86,14 @@ def fetch(source: Source, destination: Path, *, force: bool) -> Source:
     slug = (
         slugify(filename_from_content_disposition(response.headers.get("content-disposition")) or "")
         or source.slug
-        or f"pdf-{hashlib.sha256(source.origin.encode()).hexdigest()[:12]}"
+        or f"pdf-{sha256(source.origin.encode()).hexdigest()[:12]}"
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(body)
     return Source(origin=source.origin, is_url=True, slug=slug)
 
 
-def open_document(path: Path) -> pymupdf.Document:
+def open_document(path: Path) -> Document:
     try:
         document = pymupdf.open(path)
     except Exception as error:  # pymupdf raises a variety of types here

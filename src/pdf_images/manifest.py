@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict
 
-import pymupdf
+from pymupdf import Document
 
 from pdf_images.fetch import Source
 from pdf_images.filters import Thresholds
@@ -46,7 +46,7 @@ class Manifest(TypedDict):
 def build_manifest(
     source: Source,
     pdf_path: Path,
-    document: pymupdf.Document,
+    document: Document,
     records: list[ImageRecord],
     thresholds: Thresholds,
 ) -> Manifest:

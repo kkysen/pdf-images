@@ -2,18 +2,18 @@
 
 """Decoding each unique image once and laying the results out by page."""
 
-import hashlib
 import os
-import shutil
 import sys
+from hashlib import sha256
 from pathlib import Path
+from shutil import copyfile, rmtree
 
-import pymupdf
+from pymupdf import Document, Pixmap
 
 from pdf_images.records import ImageRecord
 
 
-def scan(document: pymupdf.Document) -> list[ImageRecord]:
+def scan(document: Document) -> list[ImageRecord]:
     """Collect every unique image, keyed by `xref`, in first-appearance order.
 
     A PDF stores each image once and references it from every page that uses it,
@@ -47,7 +47,7 @@ def scan(document: pymupdf.Document) -> list[ImageRecord]:
     return list(records.values())
 
 
-def _load(document: pymupdf.Document, record: ImageRecord) -> None:
+def _load(document: Document, record: ImageRecord) -> None:
     """Decode one image, recomposing with its soft mask when it has one."""
     raw = document.extract_image(record.xref)
     record.width = raw["width"]
@@ -62,22 +62,22 @@ def _load(document: pymupdf.Document, record: ImageRecord) -> None:
         # The two-argument Pixmap is what actually composites. The single-argument
         # `Pixmap(document, xref)` returns the base image with no alpha at all,
         # which would strip exactly the transparency this branch exists to keep.
-        base = pymupdf.Pixmap(document, record.xref)
+        base = Pixmap(document, record.xref)
         # The base may already carry an alpha channel, and where it does that
         # channel is a fully opaque placeholder rather than the mask. Compositing
         # rejects a base with alpha outright, and keeping it would discard the
         # transparency, so strip it first and let the soft mask supply the real one.
         if base.alpha:
-            base = pymupdf.Pixmap(base, 0)
-        mask = pymupdf.Pixmap(document, raw["smask"])
-        record.data = pymupdf.Pixmap(base, mask).tobytes("png")
+            base = Pixmap(base, 0)
+        mask = Pixmap(document, raw["smask"])
+        record.data = Pixmap(base, mask).tobytes("png")
         record.ext = "png"
         record.has_alpha = True
     else:
         record.data = raw["image"]
         record.ext = raw["ext"]
 
-    record.sha256 = hashlib.sha256(record.data).hexdigest()
+    record.sha256 = sha256(record.data).hexdigest()
 
 
 def link_or_copy(source: Path, destination: Path) -> None:
@@ -90,7 +90,7 @@ def link_or_copy(source: Path, destination: Path) -> None:
     try:
         os.link(source, destination)
     except OSError:
-        shutil.copyfile(source, destination)
+        copyfile(source, destination)
 
 
 def write_images(
@@ -105,7 +105,7 @@ def write_images(
     # The tree is rebuilt every run: leaving files sorted under a previous run's
     # thresholds beside files sorted under the current ones makes tuning useless.
     for directory in (pages_dir, rejected_dir):
-        shutil.rmtree(directory, ignore_errors=True)
+        rmtree(directory, ignore_errors=True)
 
     width = len(str(page_count))
     for record in records:
