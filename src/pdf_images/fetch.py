@@ -47,14 +47,14 @@ class Source:
     slug: str
 
 
-def resolve_source(target: str) -> Source:
-    """Decide the workspace slug from a URL or path, before anything is fetched."""
-    is_url = target.startswith(("http://", "https://"))
+def resolve_source(pdf: str) -> Source:
+    """Decide the workspace slug from a PDF URL or path, before anything is fetched."""
+    is_url = pdf.startswith(("http://", "https://"))
     if not is_url:
-        return Source(origin=target, is_url=False, slug=slugify(Path(target).stem) or "document")
+        return Source(origin=pdf, is_url=False, slug=slugify(Path(pdf).stem) or "document")
 
-    basename = Path(unquote(urlparse(target).path)).name
-    return Source(origin=target, is_url=True, slug=slugify(basename))
+    basename = Path(unquote(urlparse(pdf).path)).name
+    return Source(origin=pdf, is_url=True, slug=slugify(basename))
 
 
 def fetch(source: Source, destination: Path, *, force: bool) -> Source:

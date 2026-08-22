@@ -34,8 +34,8 @@ def fixture_pdf() -> Path:
 def extract(tmp_path: Path) -> Extract:
     """Run the CLI against the fixture and return the workspace directory."""
 
-    def _extract(*flags: str, target: str = str(FIXTURE)) -> Path:
-        assert run(parse_args([target, "--outdir", str(tmp_path), *flags])) == 0
+    def _extract(*flags: str, pdf: str = str(FIXTURE)) -> Path:
+        assert run(parse_args([pdf, "--outdir", str(tmp_path), *flags])) == 0
         return tmp_path / "fixture"
 
     return _extract

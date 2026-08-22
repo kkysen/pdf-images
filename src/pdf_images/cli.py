@@ -45,7 +45,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         prog="pdf-images",
         description="Fetch a PDF, extract its images, and organize them by page.",
     )
-    parser.add_argument("target", help="a URL to fetch, or a path to a local PDF")
+    parser.add_argument(
+        "pdf",
+        metavar="PDF",
+        help="the PDF to extract from, either a URL to fetch or a path to a local file",
+    )
     parser.add_argument(
         "--outdir",
         type=Path,
@@ -125,7 +129,7 @@ def thresholds_from(args: argparse.Namespace) -> Thresholds:
 
 
 def run(args: argparse.Namespace) -> int:
-    source = resolve_source(args.target)
+    source = resolve_source(args.pdf)
 
     if not source.is_url:
         local = Path(source.origin).expanduser()

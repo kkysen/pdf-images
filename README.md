@@ -66,7 +66,8 @@ src/pdf_images/
 
 ### Input
 
-The argument is fetched if it starts with `http://` or `https://`, and treated as a local path otherwise.
+The `PDF` argument is fetched if it starts with `http://` or `https://`,
+and treated as a path to a local file otherwise.
 Fetches follow redirects, check the `Content-Type`, and sniff for the `%PDF-` magic bytes;
 `--force` skips the content-type check.
 
