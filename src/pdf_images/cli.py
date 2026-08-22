@@ -94,7 +94,14 @@ def run(
         print_table(manifest)
     else:
         kept = sum(1 for record in records if record.kept)
-        print(f"{pdf_path}: {document.page_count} pages, {kept} of {len(records)} images kept -> {workspace}")
+        summary = f"{document.page_count} pages, {kept} of {len(records)} images kept"
+        if selection is not None:
+            # With a page selection the document-wide count is not what was written,
+            # and saying only the former makes an almost empty workspace look wrong.
+            written = sum(len(selection.intersection(r.placements)) for r in records if r.kept)
+            pages_written = ",".join(str(page) for page in sorted(selection))
+            summary += f"; wrote {written} on page {pages_written}"
+        print(f"{pdf_path}: {summary} -> {workspace}")
 
     if not dry_run:
         (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

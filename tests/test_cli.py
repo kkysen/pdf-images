@@ -40,6 +40,15 @@ def test_pages_restricts_output_but_not_verdicts(extract: Extract, manifest_of: 
     assert logo["reason"] == "ubiquitous"
 
 
+def test_a_page_selection_reports_what_was_written(fixture_pdf: Path, tmp_path: Path) -> None:
+    """The document-wide count alone makes an almost empty workspace look wrong."""
+    result = CliRunner().invoke(app, [str(fixture_pdf), "--outdir", str(tmp_path), "--pages", "4"])
+
+    assert result.exit_code == 0, result.output
+    assert "3 of 7 images kept" in result.output
+    assert "wrote 2 on page 4" in result.output
+
+
 def test_rerun_is_idempotent(extract: Extract) -> None:
     def tree(workspace: Path) -> set[str]:
         return {str(path.relative_to(workspace)) for path in workspace.rglob("*.png")}
