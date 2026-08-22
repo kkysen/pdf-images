@@ -7,8 +7,6 @@ the right image for the wrong reason cannot be retuned from the manifest, which
 is the whole point of recording it.
 """
 
-from __future__ import annotations
-
 from conftest import Extract, ManifestOf
 
 from pdf_images.manifest import Manifest

@@ -6,8 +6,6 @@ A leaf module importing nothing else in the package, so the modules that all
 need these two names cannot form an import cycle around them.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 

@@ -2,8 +2,6 @@
 
 """The junk heuristics, and the thresholds that drive them."""
 
-from __future__ import annotations
-
 import io
 from dataclasses import dataclass
 

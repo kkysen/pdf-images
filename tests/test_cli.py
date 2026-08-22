@@ -2,8 +2,6 @@
 
 """Flags, reruns, and the failures that should exit nonzero rather than traceback."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 

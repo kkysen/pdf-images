@@ -6,8 +6,6 @@
 can see through it, and so the JSON shape is stated in one place.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TypedDict

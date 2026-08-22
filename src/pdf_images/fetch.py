@@ -2,8 +2,6 @@
 
 """Turning a URL or a path into a local PDF and a workspace to put it beside."""
 
-from __future__ import annotations
-
 import hashlib
 import re
 import sys

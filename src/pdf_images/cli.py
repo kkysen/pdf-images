@@ -2,8 +2,6 @@
 
 """The command line: argument parsing and the top-level run."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

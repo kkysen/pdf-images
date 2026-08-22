@@ -2,8 +2,6 @@
 
 """Decoding each unique image once and laying the results out by page."""
 
-from __future__ import annotations
-
 import hashlib
 import os
 import shutil

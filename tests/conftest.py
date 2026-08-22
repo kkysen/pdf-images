@@ -7,8 +7,6 @@ Everything reads the committed `tests/fixture.pdf` rather than regenerating it.
 for byte from the tracked one, and a test that rewrote it would dirty the tree.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Callable
 from pathlib import Path
