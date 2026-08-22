@@ -75,7 +75,8 @@ def _load(document: Document, record: ImageRecord) -> None:
         record.has_alpha = True
     else:
         record.data = raw["image"]
-        record.ext = raw["ext"]
+        # PyMuPDF reports "jpeg"; `.jpg` is what everything else writes.
+        record.ext = "jpg" if raw["ext"] == "jpeg" else raw["ext"]
 
     record.sha256 = sha256(record.data).hexdigest()
 
