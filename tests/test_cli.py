@@ -93,3 +93,19 @@ def test_end_to_end_against_a_real_paper(tmp_path: Path) -> None:
     assert manifest["page_count"] == 15
     assert (workspace / "source.pdf").is_file()
     assert all(image["kept"] for image in manifest["images"])
+
+
+@pytest.mark.network
+def test_end_to_end_against_a_pdf_with_masked_images(tmp_path: Path) -> None:
+    """Regression: every masked image here carries an opaque alpha channel of its own.
+
+    Compositing rejects such a base, so this document aborted the whole run with
+    a traceback. It also names itself via `Content-Disposition`, which is what
+    left an empty directory behind under the URL basename.
+    """
+    assert run(parse_args(["https://www.mta.info/document/211811", "--outdir", str(tmp_path)])) == 0
+
+    assert {path.name for path in tmp_path.iterdir()} == {"20260603-cb10-general-board-meeting"}
+    manifest = json.loads((tmp_path / "20260603-cb10-general-board-meeting" / "manifest.json").read_text())
+    assert not any(image["reason"] == "undecodable" for image in manifest["images"])
+    assert sum(image["kept"] for image in manifest["images"]) == 24

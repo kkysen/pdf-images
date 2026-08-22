@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import sys
 from pathlib import Path
 
 import pymupdf
@@ -36,7 +37,14 @@ def scan(document: pymupdf.Document) -> list[ImageRecord]:
             record.placements[number] = index
 
     for record in records.values():
-        _load(document, record)
+        try:
+            _load(document, record)
+        except Exception as error:
+            # PyMuPDF raises for image shapes it cannot decode or composite. One
+            # such image should not cost the whole run, so it is quarantined with
+            # the reason recorded, exactly like any other rejected image.
+            print(f"warning: cannot decode image {record.xref}: {error}", file=sys.stderr)
+            record.undecodable = True
 
     return list(records.values())
 
@@ -57,6 +65,12 @@ def _load(document: pymupdf.Document, record: ImageRecord) -> None:
         # `Pixmap(document, xref)` returns the base image with no alpha at all,
         # which would strip exactly the transparency this branch exists to keep.
         base = pymupdf.Pixmap(document, record.xref)
+        # The base may already carry an alpha channel, and where it does that
+        # channel is a fully opaque placeholder rather than the mask. Compositing
+        # rejects a base with alpha outright, and keeping it would discard the
+        # transparency, so strip it first and let the soft mask supply the real one.
+        if base.alpha:
+            base = pymupdf.Pixmap(base, 0)
         mask = pymupdf.Pixmap(document, raw["smask"])
         record.data = pymupdf.Pixmap(base, mask).tobytes("png")
         record.ext = "png"
@@ -98,7 +112,7 @@ def write_images(
     width = len(str(page_count))
     for record in records:
         if not record.kept:
-            if selection is not None and not selection.intersection(record.placements):
+            if record.undecodable or (selection is not None and not selection.intersection(record.placements)):
                 continue
             rejected_dir.mkdir(parents=True, exist_ok=True)
             target = rejected_dir / f"{record.stem(record.first_page, width)}.{record.ext}"

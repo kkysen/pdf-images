@@ -101,9 +101,17 @@ a PDF stores the alpha channel separately, as a soft mask,
 so those are composited back together and re-encoded as PNG.
 Passing the original bytes through would silently flatten them.
 
+Some producers emit an image carrying both a soft mask and its own alpha channel,
+where that channel is an opaque placeholder rather than the mask.
+The placeholder is stripped before compositing,
+since keeping it would drop the transparency the mask describes.
+
 There is deliberately no rule for rejecting masks.
 A soft mask lives inside its parent image rather than in the page's resources,
 so it never appears as a standalone image in the first place.
+
+An image PyMuPDF cannot decode at all is quarantined as `undecodable` with a warning,
+rather than ending the run: one bad image in a document should not cost the other twenty-five.
 
 ### Caching and reruns
 
@@ -138,6 +146,7 @@ so you can see what a threshold actually did and retune it.
 | `hairline` | either side 3 px or less, or an aspect ratio worse than 50:1 | `--max-aspect` |
 | `solid` | near-uniform color | `--keep-solid` |
 | `ubiquitous` | small *and* reused across many pages: the logo/watermark signal | `--max-pages`, `--ubiquitous-area` |
+| `undecodable` | PyMuPDF could not decode or composite it | none |
 
 The order matters, and the payload floor runs *last*.
 PNG compresses a solid 200x200 block to a few hundred bytes

@@ -33,6 +33,7 @@ class ImageRecord:
     data: bytes = b""
     sha256: str = ""
     has_alpha: bool = False
+    undecodable: bool = False
     kept: bool = True
     reason: str | None = None
     path: str | None = None

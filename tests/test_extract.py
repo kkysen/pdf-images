@@ -4,6 +4,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pymupdf
+import pytest
 from conftest import Extract, ManifestOf
 from PIL import Image
 
@@ -70,3 +74,30 @@ def test_rejects_are_quarantined_not_deleted(extract: Extract, manifest_of: Mani
         assert path is not None
         assert (workspace / path).is_file()
         assert path.startswith("rejected/")
+
+
+def test_a_base_with_alpha_cannot_be_composited_directly(fixture_pdf: Path) -> None:
+    """Pins the PyMuPDF behaviour that `_load`'s alpha guard exists for.
+
+    Some producers emit an image that carries both a soft mask and its own alpha
+    channel, where that channel is an opaque placeholder rather than the mask.
+    Compositing rejects such a base outright, which is the crash this guards, and
+    keeping its alpha instead of the mask's would silently drop the transparency.
+    PyMuPDF's own writer cannot produce that shape, so the contract is asserted
+    here directly rather than through a fixture PDF.
+    """
+    document = pymupdf.open(fixture_pdf)
+    translucent = next(
+        entry for page in range(document.page_count) for entry in document[page].get_images(full=True) if entry[1]
+    )
+    base = pymupdf.Pixmap(document, translucent[0])
+    mask = pymupdf.Pixmap(document, translucent[1])
+
+    with_alpha = pymupdf.Pixmap(base, 1)
+    assert with_alpha.alpha, "the setup itself must produce the shape being guarded against"
+    with pytest.raises(Exception, match="must not have an alpha channel"):
+        pymupdf.Pixmap(with_alpha, mask)
+
+    stripped = pymupdf.Pixmap(with_alpha, 0)
+    assert not stripped.alpha
+    assert pymupdf.Pixmap(stripped, mask).alpha, "stripping first is what makes compositing work"

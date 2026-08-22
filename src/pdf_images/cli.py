@@ -147,6 +147,9 @@ def run(args: argparse.Namespace) -> int:
                 # The response told us a better name than the URL did.
                 resolved.parent.mkdir(parents=True, exist_ok=True)
                 pdf_path.replace(resolved)
+                # The URL basename already created a directory. Now that a better
+                # name has won, leave no empty one behind.
+                pdf_path.parent.rmdir()
                 pdf_path = resolved
 
     document = open_document(pdf_path)

@@ -76,6 +76,9 @@ def classify(record: ImageRecord, thresholds: Thresholds, page_count: int) -> st
     Ordered cheapest and most decisive first, so the recorded reason is the most
     informative one rather than whichever check happened to run.
     """
+    if record.undecodable:
+        return "undecodable"
+
     smallest = min(record.width, record.height)
     largest = max(record.width, record.height)
     if thresholds.hairline_dim and smallest <= thresholds.hairline_dim:
