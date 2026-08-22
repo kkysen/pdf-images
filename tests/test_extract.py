@@ -100,3 +100,20 @@ def test_a_base_with_alpha_cannot_be_composited_directly(fixture_pdf: Path) -> N
     stripped = Pixmap(with_alpha, 0)
     assert not stripped.alpha
     assert Pixmap(stripped, mask).alpha, "stripping first is what makes compositing work"
+
+
+def test_rejects_under_a_page_selection_are_named_for_a_selected_page(
+    extract: Extract, manifest_of: ManifestOf
+) -> None:
+    """A logo on every page is a page 4 image too, so it must not be filed as `p1`.
+
+    Naming a reject for its first page in the document rather than in the
+    selection makes it read as a stray file from a page nobody asked for.
+    """
+    workspace = extract("--pages", "4")
+    manifest = manifest_of(workspace)
+
+    rejected = [path for image in manifest["images"] if (path := image["path"]) and path.startswith("rejected/")]
+    assert rejected, "the ubiquitous logo appears on page 4 and should be quarantined"
+    for path in rejected:
+        assert path.startswith("rejected/p4-"), path

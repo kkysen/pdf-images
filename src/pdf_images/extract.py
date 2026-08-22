@@ -111,10 +111,16 @@ def write_images(
     width = len(str(page_count))
     for record in records:
         if not record.kept:
-            if record.undecodable or (selection is not None and not selection.intersection(record.placements)):
+            if record.undecodable:
+                continue
+            shown_on = sorted(selection.intersection(record.placements)) if selection is not None else record.pages
+            if not shown_on:
                 continue
             rejected_dir.mkdir(parents=True, exist_ok=True)
-            target = rejected_dir / f"{record.stem(record.first_page, width)}.{record.ext}"
+            # Named for the first page in the selection rather than in the document.
+            # A logo on every page is a page 22 image too, and calling it `p01`
+            # under `--pages 22` reads as a stray file from a page nobody asked for.
+            target = rejected_dir / f"{record.stem(shown_on[0], width)}.{record.ext}"
             target.write_bytes(record.data)
             record.path = str(target.relative_to(workspace))
             continue
