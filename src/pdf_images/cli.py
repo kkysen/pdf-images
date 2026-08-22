@@ -2,10 +2,12 @@
 
 """The command line: argument parsing and the top-level run."""
 
-import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Annotated
+
+import typer
 
 from pdf_images.extract import scan, write_images
 from pdf_images.fetch import fetch, open_document, resolve_source, workspace_for
@@ -38,112 +40,35 @@ def parse_page_selection(spec: str, page_count: int) -> set[int]:
     return selected
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        prog="pdf-images",
-        description="Fetch a PDF, extract its images, and organize them by page.",
-    )
-    parser.add_argument(
-        "pdf",
-        metavar="PDF",
-        help="the PDF to extract from, either a URL to fetch or a path to a local file",
-    )
-    parser.add_argument(
-        "--outdir",
-        type=Path,
-        default=Path.cwd(),
-        help="where the workspace directory is created (default: the current directory)",
-    )
-    parser.add_argument(
-        "--refetch",
-        action="store_true",
-        help="re-download even when the workspace already holds a source.pdf",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="accept a download that does not look like a PDF",
-    )
-
-    junk = parser.add_argument_group(
-        "junk filtering",
-        "Rejects are quarantined under rejected/, never deleted. Set any threshold to 0 to disable that check.",
-    )
-    defaults = Thresholds()
-    junk.add_argument("--no-filter", action="store_true", help="keep every image")
-    junk.add_argument(
-        "--min-dim", type=int, default=defaults.min_dim, help="reject images shorter than this on either side"
-    )
-    junk.add_argument(
-        "--min-bytes", type=int, default=defaults.min_bytes, help="reject images whose payload is smaller than this"
-    )
-    junk.add_argument(
-        "--max-aspect", type=float, default=defaults.max_aspect, help="reject images more elongated than this ratio"
-    )
-    junk.add_argument(
-        "--ubiquitous-area",
-        type=int,
-        default=defaults.ubiquitous_area,
-        help="an image smaller than this many pixels can be rejected as a repeated logo",
-    )
-    junk.add_argument(
-        "--max-pages",
-        type=int,
-        default=defaults.max_pages,
-        help="how many pages a small image may appear on before it counts as a logo"
-        " (default: half the document, minimum 3)",
-    )
-    junk.add_argument("--keep-solid", action="store_true", help="keep near-uniform images")
-
-    output = parser.add_argument_group("output")
-    output.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="write nothing; print what would be extracted. The threshold tuning loop.",
-    )
-    output.add_argument("--pages", help="restrict which pages are written, e.g. 3-7,12")
-    output.add_argument("--json", action="store_true", help="print the manifest instead of a table")
-    return parser.parse_args(argv)
-
-
-def thresholds_from(args: argparse.Namespace) -> Thresholds:
-    if args.no_filter:
-        return Thresholds(
-            min_dim=0,
-            min_bytes=0,
-            max_aspect=0,
-            hairline_dim=0,
-            ubiquitous_area=0,
-            keep_solid=True,
-        )
-    return Thresholds(
-        min_dim=args.min_dim,
-        min_bytes=args.min_bytes,
-        max_aspect=args.max_aspect,
-        ubiquitous_area=args.ubiquitous_area,
-        max_pages=args.max_pages,
-        keep_solid=args.keep_solid,
-    )
-
-
-def run(args: argparse.Namespace) -> int:
-    source = resolve_source(args.pdf)
+def run(
+    pdf: str,
+    outdir: Path,
+    thresholds: Thresholds,
+    *,
+    refetch: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    pages: str | None = None,
+    as_json: bool = False,
+) -> int:
+    """Do the whole job. Separated from the Typer command so tests can call it directly."""
+    source = resolve_source(pdf)
 
     if not source.is_url:
         local = Path(source.origin).expanduser()
         if not local.is_file():
             raise Failure(f"no such file: {local}")
         pdf_path = local
-        workspace = workspace_for(source, args.outdir)
-        if not args.dry_run:
+        workspace = workspace_for(source, outdir)
+        if not dry_run:
             workspace.mkdir(parents=True, exist_ok=True)
     else:
-        workspace = workspace_for(source, args.outdir)
+        workspace = workspace_for(source, outdir)
         pdf_path = workspace / "source.pdf"
         # `source.pdf` is cached across runs so that retuning thresholds is cheap.
-        if args.refetch or not (pdf_path.is_file() and pdf_path.stat().st_size > 0):
-            source = fetch(source, pdf_path, force=args.force)
-            workspace = workspace_for(source, args.outdir)
+        if refetch or not (pdf_path.is_file() and pdf_path.stat().st_size > 0):
+            source = fetch(source, pdf_path, force=force)
+            workspace = workspace_for(source, outdir)
             resolved = workspace / "source.pdf"
             if resolved != pdf_path:
                 # The response told us a better name than the URL did.
@@ -155,35 +80,127 @@ def run(args: argparse.Namespace) -> int:
                 pdf_path = resolved
 
     document = open_document(pdf_path)
-    thresholds = thresholds_from(args)
-    selection = parse_page_selection(args.pages, document.page_count) if args.pages else None
+    selection = parse_page_selection(pages, document.page_count) if pages else None
 
     records = scan(document)
     apply_filters(records, thresholds, document.page_count)
-    if not args.dry_run:
+    if not dry_run:
         write_images(records, workspace, document.page_count, selection)
     manifest = build_manifest(source, pdf_path, document, records, thresholds)
 
-    if args.json:
+    if as_json:
         print(json.dumps(manifest, indent=2))
-    elif args.dry_run:
+    elif dry_run:
         print_table(manifest)
     else:
         kept = sum(1 for record in records if record.kept)
         print(f"{pdf_path}: {document.page_count} pages, {kept} of {len(records)} images kept -> {workspace}")
 
-    if not args.dry_run:
+    if not dry_run:
         (workspace / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return 0
 
 
-def main() -> int:
+app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Fetch a PDF, extract its images, and organize them by page.",
+)
+
+_DEFAULTS = Thresholds()
+
+JUNK = "junk filtering"
+OUTPUT = "output"
+
+
+@app.command()
+def extract(
+    pdf: Annotated[
+        str,
+        typer.Argument(metavar="PDF", help="the PDF to extract from, either a URL to fetch or a path to a local file"),
+    ],
+    outdir: Annotated[
+        Path, typer.Option(help="where the workspace directory is created", show_default="the current directory")
+    ] = Path("."),
+    refetch: Annotated[
+        bool, typer.Option("--refetch", help="re-download even when the workspace already holds a source.pdf")
+    ] = False,
+    force: Annotated[bool, typer.Option("--force", help="accept a download that does not look like a PDF")] = False,
+    no_filter: Annotated[bool, typer.Option("--no-filter", help="keep every image", rich_help_panel=JUNK)] = False,
+    min_dim: Annotated[
+        int, typer.Option(help="reject images shorter than this on either side", rich_help_panel=JUNK)
+    ] = _DEFAULTS.min_dim,
+    min_bytes: Annotated[
+        int, typer.Option(help="reject images whose payload is smaller than this", rich_help_panel=JUNK)
+    ] = _DEFAULTS.min_bytes,
+    max_aspect: Annotated[
+        float, typer.Option(help="reject images more elongated than this ratio", rich_help_panel=JUNK)
+    ] = _DEFAULTS.max_aspect,
+    ubiquitous_area: Annotated[
+        int,
+        typer.Option(
+            help="an image smaller than this many pixels can be rejected as a repeated logo", rich_help_panel=JUNK
+        ),
+    ] = _DEFAULTS.ubiquitous_area,
+    max_pages: Annotated[
+        int,
+        typer.Option(
+            help="how many pages a small image may appear on before it counts as a logo",
+            show_default="half the document, minimum 3",
+            rich_help_panel=JUNK,
+        ),
+    ] = _DEFAULTS.max_pages,
+    keep_solid: Annotated[
+        bool, typer.Option("--keep-solid", help="keep near-uniform images", rich_help_panel=JUNK)
+    ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="write nothing; print what would be extracted. The threshold tuning loop.",
+            rich_help_panel=OUTPUT,
+        ),
+    ] = False,
+    pages: Annotated[
+        str | None, typer.Option(help="restrict which pages are written, e.g. 3-7,12", rich_help_panel=OUTPUT)
+    ] = None,
+    as_json: Annotated[
+        bool, typer.Option("--json", help="print the manifest instead of a table", rich_help_panel=OUTPUT)
+    ] = False,
+) -> None:
+    """Fetch a PDF, extract its images, and organize them by page.
+
+    Rejects are quarantined under rejected/, never deleted.
+    Set any junk filtering threshold to 0 to disable that check.
+    """
+    thresholds = (
+        Thresholds(min_dim=0, min_bytes=0, max_aspect=0, hairline_dim=0, ubiquitous_area=0, keep_solid=True)
+        if no_filter
+        else Thresholds(
+            min_dim=min_dim,
+            min_bytes=min_bytes,
+            max_aspect=max_aspect,
+            ubiquitous_area=ubiquitous_area,
+            max_pages=max_pages,
+            keep_solid=keep_solid,
+        )
+    )
     try:
-        return run(parse_args())
+        run(
+            pdf,
+            outdir,
+            thresholds,
+            refetch=refetch,
+            force=force,
+            dry_run=dry_run,
+            pages=pages,
+            as_json=as_json,
+        )
     except Failure as error:
+        # An expected failure is a message and a nonzero exit, never a traceback.
         print(f"pdf-images: {error}", file=sys.stderr)
-        return 1
+        raise typer.Exit(1) from error
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    app()

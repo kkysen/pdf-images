@@ -7,22 +7,24 @@ from pathlib import Path
 
 import pytest
 from conftest import Extract, ManifestOf
+from typer.testing import CliRunner
 
-from pdf_images.cli import main, parse_args, run
-from pdf_images.records import Failure
+from pdf_images.cli import app
 
 
-def test_dry_run_writes_nothing(fixture_pdf: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(parse_args([str(fixture_pdf), "--outdir", str(tmp_path), "--dry-run"])) == 0
+def test_dry_run_writes_nothing(fixture_pdf: Path, tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, [str(fixture_pdf), "--outdir", str(tmp_path), "--dry-run"])
 
+    assert result.exit_code == 0, result.output
     assert list(tmp_path.iterdir()) == []
-    assert "ubiquitous" in capsys.readouterr().out
+    assert "ubiquitous" in result.output
 
 
-def test_json_output_is_valid(fixture_pdf: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    assert run(parse_args([str(fixture_pdf), "--outdir", str(tmp_path), "--dry-run", "--json"])) == 0
+def test_json_output_is_valid(fixture_pdf: Path, tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, [str(fixture_pdf), "--outdir", str(tmp_path), "--dry-run", "--json"])
 
-    manifest = json.loads(capsys.readouterr().out)
+    assert result.exit_code == 0, result.output
+    manifest = json.loads(result.output)
     assert manifest["page_count"] == 6
     assert len(manifest["images"]) == 7
 
@@ -67,24 +69,19 @@ def test_retuning_leaves_no_stale_files(extract: Extract) -> None:
         (["tests/fixture.pdf", "--pages", "nonsense"], "cannot parse page selection"),
     ],
 )
-def test_expected_failures_are_reported(argv: list[str], expected: str, tmp_path: Path) -> None:
-    with pytest.raises(Failure, match=expected):
-        run(parse_args([*argv, "--outdir", str(tmp_path)]))
+def test_expected_failures_exit_nonzero_without_a_traceback(argv: list[str], expected: str, tmp_path: Path) -> None:
+    result = CliRunner().invoke(app, [*argv, "--outdir", str(tmp_path)])
 
-
-def test_main_exits_nonzero_without_a_traceback(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.setattr("sys.argv", ["pdf-images", "/nonexistent.pdf"])
-
-    assert main() == 1
-    assert capsys.readouterr().err.startswith("pdf-images: no such file")
+    assert result.exit_code == 1
+    assert expected in result.output
+    assert "Traceback" not in result.output
 
 
 @pytest.mark.network
 def test_end_to_end_against_a_real_paper(tmp_path: Path) -> None:
     """Fetching, the `Content-Disposition` slug, and filtering on real content."""
-    assert run(parse_args(["https://arxiv.org/pdf/1706.03762", "--outdir", str(tmp_path)])) == 0
+    result = CliRunner().invoke(app, ["https://arxiv.org/pdf/1706.03762", "--outdir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
 
     workspace = tmp_path / "1706-03762v7"
     manifest = json.loads((workspace / "manifest.json").read_text())
@@ -101,7 +98,8 @@ def test_end_to_end_against_a_pdf_with_masked_images(tmp_path: Path) -> None:
     a traceback. It also names itself via `Content-Disposition`, which is what
     left an empty directory behind under the URL basename.
     """
-    assert run(parse_args(["https://www.mta.info/document/211811", "--outdir", str(tmp_path)])) == 0
+    result = CliRunner().invoke(app, ["https://www.mta.info/document/211811", "--outdir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
 
     assert {path.name for path in tmp_path.iterdir()} == {"20260603-cb10-general-board-meeting"}
     manifest = json.loads((tmp_path / "20260603-cb10-general-board-meeting" / "manifest.json").read_text())

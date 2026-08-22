@@ -12,8 +12,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
-from pdf_images.cli import parse_args, run
+from pdf_images.cli import app
 from pdf_images.manifest import Manifest
 
 FIXTURE = Path(__file__).parent / "fixture.pdf"
@@ -33,7 +34,8 @@ def extract(tmp_path: Path) -> Extract:
     """Run the CLI against the fixture and return the workspace directory."""
 
     def _extract(*flags: str, pdf: str = str(FIXTURE)) -> Path:
-        assert run(parse_args([pdf, "--outdir", str(tmp_path), *flags])) == 0
+        result = CliRunner().invoke(app, [pdf, "--outdir", str(tmp_path), *flags])
+        assert result.exit_code == 0, result.output
         return tmp_path / "fixture"
 
     return _extract

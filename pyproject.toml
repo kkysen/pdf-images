@@ -9,10 +9,11 @@ dependencies = [
     "httpx>=0.28.1",
     "pillow>=11.4.0",
     "pymupdf>=1.28.2",
+    "typer>=0.27.1",
 ]
 
 [project.scripts]
-pdf-images = "pdf_images.cli:main"
+pdf-images = "pdf_images.cli:app"
 
 [build-system]
 requires = ["hatchling"]

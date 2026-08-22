@@ -29,6 +29,9 @@ $ uv run pdf-images ./local.pdf --no-filter --outdir ~/scratch
 `uv` resolves the dependencies and installs the `pdf-images` entry point on first run,
 so there is no virtualenv to create or activate by hand.
 
+The CLI is built with Typer, so `uv run pdf-images --help` groups the flags
+into junk filtering and output panels.
+
 ## Development
 
 ```console
@@ -51,6 +54,7 @@ Tests read the committed `tests/fixture.pdf`, a six page document
 carrying one image per heuristic, and never regenerate it:
 `tests/make_fixture.py` embeds a creation timestamp,
 so a regenerated PDF differs byte for byte from the tracked one.
+Regenerate it deliberately with `uv run python tests/make_fixture.py`.
 
 ### Layout
 
@@ -61,7 +65,7 @@ src/pdf_images/
   extract.py    decoding each unique image once, and the per-page layout
   filters.py    the junk heuristics and their thresholds
   manifest.py   the run record, and the --dry-run table
-  cli.py        argument parsing and the top-level run
+  cli.py        the Typer command, and the `run` it delegates to
 ```
 
 ### Input
