@@ -114,3 +114,28 @@ def test_end_to_end_against_a_pdf_with_masked_images(tmp_path: Path) -> None:
     manifest = json.loads((tmp_path / "20260603-cb10-general-board-meeting" / "manifest.json").read_text())
     assert not any(image["reason"] == "undecodable" for image in manifest["images"])
     assert sum(image["kept"] for image in manifest["images"]) == 24
+
+
+@pytest.mark.network
+def test_a_page_fragment_restricts_the_output(tmp_path: Path) -> None:
+    """`#page=N` should behave exactly as `--pages N` does."""
+    result = CliRunner().invoke(app, ["https://www.mta.info/document/211811#page=22", "--outdir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+
+    workspace = tmp_path / "20260603-cb10-general-board-meeting"
+    assert {path.name for path in (workspace / "pages").iterdir()} == {"p22"}
+    # The fragment restricts what is written, not which verdicts are reached:
+    # the manifest still describes every image in the document.
+    manifest = json.loads((workspace / "manifest.json").read_text())
+    assert manifest["page_count"] == 27
+    assert len(manifest["images"]) == 26
+
+
+@pytest.mark.network
+def test_an_explicit_pages_option_beats_the_fragment(tmp_path: Path) -> None:
+    args = ["https://www.mta.info/document/211811#page=22", "--pages", "21", "--outdir", str(tmp_path)]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 0, result.output
+
+    workspace = tmp_path / "20260603-cb10-general-board-meeting"
+    assert {path.name for path in (workspace / "pages").iterdir()} == {"p21"}

@@ -72,6 +72,20 @@ src/pdf_images/
 
 The `PDF` argument is fetched if it starts with `http://` or `https://`,
 and treated as a path to a local file otherwise.
+
+A URL may carry a PDF Open Parameters fragment naming a page,
+as viewers and page-specific links produce:
+
+```console
+$ uv run pdf-images 'https://example.org/paper.pdf#page=22'
+```
+
+That extracts only page 22, exactly as `--pages 22` would,
+and an explicit `--pages` wins if both are given.
+Other fragment parameters (`#page=7&zoom=150`, `#nameddest=intro`) are ignored rather than rejected.
+The fragment never reaches the server or the workspace name,
+so the same document lands in the same directory whichever page was linked.
+Quote the URL: `#` starts a comment in most shells.
 Fetches follow redirects, check the `Content-Type`, and sniff for the `%PDF-` magic bytes;
 `--force` skips the content-type check.
 

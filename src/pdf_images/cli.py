@@ -80,6 +80,9 @@ def run(
                 pdf_path = resolved
 
     document = open_document(pdf_path)
+    # An explicit --pages wins over a `#page=N` fragment in the URL.
+    if pages is None and source.page is not None:
+        pages = str(source.page)
     selection = parse_page_selection(pages, document.page_count) if pages else None
 
     records = scan(document)
@@ -165,7 +168,12 @@ def extract(
         ),
     ] = False,
     pages: Annotated[
-        str | None, Option(help="restrict which pages are written, e.g. 3-7,12", rich_help_panel=OUTPUT)
+        str | None,
+        Option(
+            help="restrict which pages are written, e.g. 3-7,12"
+            " (default: every page, or the one named by a #page=N fragment in the URL)",
+            rich_help_panel=OUTPUT,
+        ),
     ] = None,
     as_json: Annotated[
         bool, Option("--json", help="print the manifest instead of a table", rich_help_panel=OUTPUT)

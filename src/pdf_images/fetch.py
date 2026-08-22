@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 import pymupdf
@@ -45,6 +45,31 @@ class Source:
     origin: str
     is_url: bool
     slug: str
+    # The page named by a `#page=N` fragment, if the URL carried one.
+    page: int | None = None
+
+    @property
+    def request_url(self) -> str:
+        """`origin` without its fragment, which is never sent to a server anyway."""
+        return self.origin.split("#", 1)[0]
+
+
+def page_from_fragment(fragment: str) -> int | None:
+    """The page in a PDF Open Parameters fragment, as in `...pdf#page=22`.
+
+    The fragment may carry other parameters alongside it (`#page=22&zoom=150`),
+    and is not part of the request: viewers interpret it after the download.
+    Anything that is not a positive page number is ignored rather than rejected,
+    since a fragment can legitimately hold things we have no use for.
+    """
+    values = parse_qs(fragment).get("page")
+    if not values:
+        return None
+    try:
+        page = int(values[0])
+    except ValueError:
+        return None
+    return page if page >= 1 else None
 
 
 def resolve_source(pdf: str) -> Source:
@@ -53,8 +78,9 @@ def resolve_source(pdf: str) -> Source:
     if not is_url:
         return Source(origin=pdf, is_url=False, slug=slugify(Path(pdf).stem) or "document")
 
-    basename = Path(unquote(urlparse(pdf).path)).name
-    return Source(origin=pdf, is_url=True, slug=slugify(basename))
+    parsed = urlparse(pdf)
+    basename = Path(unquote(parsed.path)).name
+    return Source(origin=pdf, is_url=True, slug=slugify(basename), page=page_from_fragment(parsed.fragment))
 
 
 def fetch(source: Source, destination: Path, *, force: bool) -> Source:
@@ -65,10 +91,10 @@ def fetch(source: Source, destination: Path, *, force: bool) -> Source:
     """
     with httpx.Client(follow_redirects=True, timeout=60.0) as client:
         try:
-            response = client.get(source.origin)
+            response = client.get(source.request_url)
             response.raise_for_status()
         except HTTPError as error:
-            raise Failure(f"fetching {source.origin}: {error}") from error
+            raise Failure(f"fetching {source.request_url}: {error}") from error
 
     content_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
     body = response.content
@@ -86,11 +112,11 @@ def fetch(source: Source, destination: Path, *, force: bool) -> Source:
     slug = (
         slugify(filename_from_content_disposition(response.headers.get("content-disposition")) or "")
         or source.slug
-        or f"pdf-{sha256(source.origin.encode()).hexdigest()[:12]}"
+        or f"pdf-{sha256(source.request_url.encode()).hexdigest()[:12]}"
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(body)
-    return Source(origin=source.origin, is_url=True, slug=slug)
+    return Source(origin=source.origin, is_url=True, slug=slug, page=source.page)
 
 
 def open_document(path: Path) -> Document:
